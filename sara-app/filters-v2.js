@@ -88,4 +88,9 @@
 
   // Make the initial state explicit.
   applyMultiFilters();
+
+  // Load the school-specific live research layer after filters are initialized.
+  const liveResearch = document.createElement('script');
+  liveResearch.src = 'sara-app/research-v2.js?v=20260906-1';
+  document.body.appendChild(liveResearch);
 })();
