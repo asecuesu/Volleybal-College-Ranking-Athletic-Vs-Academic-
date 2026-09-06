@@ -19,11 +19,9 @@ function cors(origin: string | null) {
     'Content-Type': 'application/json'
   };
 }
-
 function json(body: unknown, status = 200, origin: string | null = null) {
   return new Response(JSON.stringify(body), { status, headers: cors(origin) });
 }
-
 function extractJson(text: string) {
   const clean = String(text || '').replace(/```(?:json)?/g, '').replace(/```/g, '').trim();
   const matches = clean.match(/\{[\s\S]*\}/g);
@@ -31,12 +29,9 @@ function extractJson(text: string) {
   const longest = matches.reduce((a, b) => a.length >= b.length ? a : b);
   try { return JSON.parse(longest); } catch { return null; }
 }
-
 async function callResearchWorker(prompt: string) {
   const res = await fetch(RESEARCH_WORKER, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt })
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt })
   });
   if (!res.ok) throw new Error(`research worker returned ${res.status}`);
   const raw = await res.json();
@@ -45,7 +40,6 @@ async function callResearchWorker(prompt: string) {
   if (!parsed) throw new Error('research worker returned no usable JSON');
   return parsed;
 }
-
 function setterPrompt(schoolName: string) {
   return `Research the CURRENT or MOST RECENT OFFICIAL women's volleyball roster for ${schoolName}.
 Use ONLY the university's official athletics website as the roster source. Do not use recruiting sites, Wikipedia, social media, or third-party roster databases.
@@ -55,7 +49,6 @@ Return ONLY valid JSON in exactly this shape:
 {"pageUrl":"https://official-roster-url","season":"2026 or latest year","setters":[{"name":"","classYear":"","position":"","height":"5'7\\\"","heightInches":67}],"minHeightInches":67,"maxHeightInches":70,"summary":"Concise factual explanation of what this roster evidence implies for a 1.71 m / 5'7¼ setter."}
 If no setter can be identified on the official roster, return an empty setters array, null minHeightInches/maxHeightInches, and explain that limitation in summary. Never invent data.`;
 }
-
 function aidPrompt(schoolName: string) {
   return `Research undergraduate financial aid for INTERNATIONAL applicants at ${schoolName} using ONLY official university admissions and financial-aid webpages.
 Determine: (1) whether international applicants can receive institutional need-based aid; (2) whether admissions is need-blind or need-aware for international applicants; (3) whether the university says it meets 100% of demonstrated financial need for admitted international students; (4) whether merit scholarships are available to international applicants; and (5) any important limitation that materially affects an international applicant seeking substantial aid.
@@ -71,16 +64,26 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST required' }, 405, origin);
 
   try {
-    const { schoolKey, schoolName, type, force = false } = await req.json();
-    if (!schoolKey || !schoolName || !['setter', 'aid'].includes(type)) {
-      return json({ error: 'schoolKey, schoolName and type=setter|aid are required' }, 400, origin);
-    }
-
+    const body = await req.json();
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } }
     );
+
+    if (body.action === 'list') {
+      const { data, error } = await supabase
+        .from('school_research_cache')
+        .select('school_key,school_name,research_type,payload,source_url,checked_at,expires_at')
+        .order('school_key');
+      if (error) throw error;
+      return json({ rows: data || [] }, 200, origin);
+    }
+
+    const { schoolKey, schoolName, type, force = false, lookupOnly = false } = body;
+    if (!schoolKey || !['setter', 'aid'].includes(type)) {
+      return json({ error: 'schoolKey and type=setter|aid are required' }, 400, origin);
+    }
 
     const { data: existing, error: readError } = await supabase
       .from('school_research_cache')
@@ -91,15 +94,19 @@ Deno.serve(async (req) => {
     if (readError) throw readError;
 
     const now = Date.now();
-    if (!force && existing && new Date(existing.expires_at).getTime() > now) {
+    const fresh = existing && new Date(existing.expires_at).getTime() > now;
+    if (fresh || lookupOnly) {
       return json({
-        cached: true,
-        payload: existing.payload,
-        checkedAt: existing.checked_at,
-        expiresAt: existing.expires_at,
-        sourceUrl: existing.source_url
+        cached: !!existing,
+        fresh: !!fresh,
+        payload: existing?.payload || null,
+        checkedAt: existing?.checked_at || null,
+        expiresAt: existing?.expires_at || null,
+        sourceUrl: existing?.source_url || null
       }, 200, origin);
     }
+
+    if (!schoolName) return json({ error: 'schoolName is required when research is needed' }, 400, origin);
 
     const payload = await callResearchWorker(type === 'setter' ? setterPrompt(schoolName) : aidPrompt(schoolName));
     const ttlDays = type === 'setter' ? SETTER_TTL_DAYS : AID_TTL_DAYS;
@@ -109,18 +116,10 @@ Deno.serve(async (req) => {
 
     const { error: writeError } = await supabase
       .from('school_research_cache')
-      .upsert({
-        school_key: schoolKey,
-        school_name: schoolName,
-        research_type: type,
-        payload,
-        source_url: sourceUrl,
-        checked_at: checkedAt,
-        expires_at: expiresAt
-      }, { onConflict: 'school_key,research_type' });
+      .upsert({ school_key: schoolKey, school_name: schoolName, research_type: type, payload, source_url: sourceUrl, checked_at: checkedAt, expires_at: expiresAt }, { onConflict: 'school_key,research_type' });
     if (writeError) throw writeError;
 
-    return json({ cached: false, payload, checkedAt, expiresAt, sourceUrl }, 200, origin);
+    return json({ cached: false, fresh: true, payload, checkedAt, expiresAt, sourceUrl }, 200, origin);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500, origin);
   }
