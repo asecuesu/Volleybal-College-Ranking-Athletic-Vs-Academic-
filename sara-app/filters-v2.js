@@ -18,9 +18,7 @@
       btn.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     const summary = root.closest('.multiFilterField')?.querySelector('.multiSummary');
-    if (summary) {
-      summary.textContent = selected.size === 0 ? 'All' : [...selected].join(' + ');
-    }
+    if (summary) summary.textContent = selected.size === 0 ? 'All' : [...selected].join(' + ');
   }
 
   function normalizeSelection(selected, values) {
@@ -28,8 +26,6 @@
   }
 
   function applyMultiFilters() {
-    // Let the original app apply search, division, aid, setter and rank filters first.
-    // The hidden legacy fit/admissions selects stay on All, so we layer multi-select here.
     originalApplyFilters();
     if (selectedFits.size) filtered = filtered.filter(d => selectedFits.has(d.athletic_fit));
     if (selectedAdmissions.size) filtered = filtered.filter(d => selectedAdmissions.has(d.admissions_reach));
@@ -43,11 +39,9 @@
     root.querySelectorAll('.multiChoice').forEach(btn => {
       btn.addEventListener('click', () => {
         const value = btn.dataset.value;
-        if (value === 'All') {
-          selected.clear();
-        } else {
-          if (selected.has(value)) selected.delete(value);
-          else selected.add(value);
+        if (value === 'All') selected.clear();
+        else {
+          if (selected.has(value)) selected.delete(value); else selected.add(value);
           normalizeSelection(selected, values);
         }
         setButtonState(groupId, selected, values);
@@ -60,14 +54,12 @@
   bindGroup('fitMulti', selectedFits, fitValues);
   bindGroup('admissionsMulti', selectedAdmissions, admissionsValues);
 
-  // Re-apply the multi-select layer after any of the original single-value controls change.
   ['search', 'division', 'aid', 'setter', 'rank'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener(id === 'search' ? 'input' : 'change', applyMultiFilters);
   });
 
-  // Replace reset behavior so it also clears the multi-select state.
   const reset = document.getElementById('reset');
   if (reset) {
     reset.onclick = () => {
@@ -78,19 +70,24 @@
       document.getElementById('aid').value = 'All';
       document.getElementById('setter').value = 'All';
       document.getElementById('rank').value = 80;
-      selectedFits.clear();
-      selectedAdmissions.clear();
+      selectedFits.clear(); selectedAdmissions.clear();
       setButtonState('fitMulti', selectedFits, fitValues);
       setButtonState('admissionsMulti', selectedAdmissions, admissionsValues);
       applyMultiFilters();
     };
   }
 
-  // Make the initial state explicit.
   applyMultiFilters();
 
-  // Load the school-specific live research layer after filters are initialized.
-  const liveResearch = document.createElement('script');
-  liveResearch.src = 'sara-app/research-v2.js?v=20260906-1';
-  document.body.appendChild(liveResearch);
+  // Bootstrap the research layer after the main app is ready. The shared config
+  // can stay blank until the Supabase function is deployed; research-v3 then
+  // automatically falls back to browser-local storage.
+  const configScript = document.createElement('script');
+  configScript.src = 'sara-app/shared-config.js';
+  configScript.onload = () => {
+    const researchScript = document.createElement('script');
+    researchScript.src = 'sara-app/research-v3.js';
+    document.body.appendChild(researchScript);
+  };
+  document.body.appendChild(configScript);
 })();
