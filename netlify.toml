@@ -1,0 +1,4 @@
+[build]
+  # This repository is published via GitHub Pages, not Netlify.
+  # Exit 0 tells Netlify to stop Git-triggered builds for this site.
+  ignore = "exit 0"
