@@ -4,11 +4,55 @@
 (() => {
   const LOCAL_KEY = 'sara-school-research-v3';
   const SHARED_URL = (window.SARA_SHARED_RESEARCH_URL || '').trim();
+  const TARGET_SEASON = 2028;
   const baseOpenSchool = openSchool;
 
   function readLocal(){ try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'{}')}catch{return {}} }
   function writeLocal(x){ try{localStorage.setItem(LOCAL_KEY,JSON.stringify(x))}catch{} }
   function inchesToHeight(n){ return Number.isFinite(n)?`${Math.floor(n/12)}'${n%12}\"`:null }
+
+  function parseRosterSeason(v){
+    const m=String(v||'').match(/20\d{2}/);
+    return m ? +m[0] : new Date().getFullYear();
+  }
+  function projectedLastSeason(classYear, rosterSeason){
+    const s=String(classYear||'').trim().toLowerCase();
+    const yr=s.match(/20\d{2}/);
+    if(yr){const y=+yr[0]; if(y>=rosterSeason&&y<=rosterSeason+6)return y}
+    if(/graduate|grad\.?|gr\.?|fifth|5th/.test(s))return rosterSeason;
+    if(/senior|\bsr\.?\b/.test(s))return rosterSeason;
+    if(/junior|\bjr\.?\b/.test(s))return rosterSeason+1;
+    if(/sophomore|\bso\.?\b/.test(s))return rosterSeason+2;
+    if(/freshman|first.year|\bfr\.?\b/.test(s))return rosterSeason+3;
+    return null;
+  }
+  function derive2028Need(setters, season){
+    const rosterSeason=parseRosterSeason(season);
+    const projected=(setters||[]).map(x=>({
+      name:x.name||'Setter',
+      classYear:x.classYear||'',
+      lastSeason:projectedLastSeason(x.classYear,rosterSeason)
+    }));
+    const known=projected.filter(x=>Number.isFinite(x.lastSeason));
+    if(!setters?.length)return {signal:'Unclear',summary:'No setter could be identified on the official roster, so a 2028 roster-opening signal cannot be estimated.',departingBefore:0,remainingIn2028:0,projected};
+    if(!known.length || known.length < Math.ceil(setters.length/2))return {signal:'Unclear',summary:'Setter class/eligibility information is too incomplete to estimate the 2028 roster opening reliably.',departingBefore:0,remainingIn2028:0,projected};
+    const departingBefore=known.filter(x=>x.lastSeason<TARGET_SEASON).length;
+    const finalIn2028=known.filter(x=>x.lastSeason===TARGET_SEASON).length;
+    const after2028=known.filter(x=>x.lastSeason>TARGET_SEASON).length;
+    const remainingIn2028=finalIn2028+after2028;
+    let signal='Low';
+    if(departingBefore>0 && remainingIn2028<=1)signal='High';
+    else if(departingBefore>0 || finalIn2028>0)signal='Medium';
+    const departures=known.filter(x=>x.lastSeason<TARGET_SEASON).map(x=>`${x.name} (${x.classYear||'class n/a'}, projected last season ${x.lastSeason})`);
+    const remains=known.filter(x=>x.lastSeason>=TARGET_SEASON).map(x=>`${x.name} (${x.classYear||'class n/a'}, projected through ${x.lastSeason})`);
+    const summary = signal==='High'
+      ? `High current-roster opening signal for fall ${TARGET_SEASON}: ${departingBefore} researched setter${departingBefore===1?' is':'s are'} projected to finish before Sara arrives, with ${remainingIn2028} of the currently listed setters projected still eligible in ${TARGET_SEASON}.`
+      : signal==='Medium'
+      ? `Medium current-roster opening signal for fall ${TARGET_SEASON}: there is meaningful setter turnover before or during Sara's entry year, but at least one currently listed setter may still be on the roster.`
+      : `Low current-roster opening signal from today's roster: no researched setter is projected to leave before ${TARGET_SEASON}, and the current group largely projects to remain through Sara's entry year.`;
+    return {signal,summary,departingBefore,remainingIn2028,finalIn2028,after2028,departures,remains,projected,rosterSeason};
+  }
+
   function applyRecord(d, rec){
     if(!rec)return;
     if(rec.setter){
@@ -20,6 +64,10 @@
       if(s.pageUrl)d.roster_source=s.pageUrl;
       d.setter_checked_at=s.checkedAt||s.checked_at||null;
       d.setter_expires_at=s.expiresAt||s.expires_at||null;
+      const need=s.need2028||derive2028Need(s.setters||[],s.season);
+      d.setter_need_2028=need.signal||'Unclear';
+      d.setter_need_2028_note=need.summary||'';
+      d.setter_need_2028_detail=need;
     }
     if(rec.aid){
       const a=rec.aid;
@@ -41,9 +89,10 @@
     if((min==null||max==null)&&setters.length){const vals=setters.map(x=>+x.heightInches).filter(Number.isFinite);if(vals.length){min=Math.min(...vals);max=Math.max(...vals)}}
     let range='Researched — height not established';
     if(min!=null&&max!=null)range=min===max?inchesToHeight(min):`${inchesToHeight(min)}–${inchesToHeight(max)}`;
-    const rosterList=setters.length?setters.map(x=>`${x.name} (${x.position||'S'}, ${x.height||inchesToHeight(+x.heightInches)||'height not listed'})`).join('; '):'';
+    const rosterList=setters.length?setters.map(x=>`${x.name} (${x.position||'S'}, ${x.height||inchesToHeight(+x.heightInches)||'height not listed'}, ${x.classYear||'class not listed'})`).join('; '):'';
     const summary=[p?.summary,rosterList?`Official roster setters found: ${rosterList}.`:null,p?.season?`Roster season: ${p.season}.`:null].filter(Boolean).join(' ');
-    return {pageUrl:p?.pageUrl||meta.sourceUrl||'',season:p?.season||'',setters,minHeightInches:min,maxHeightInches:max,setter_range:range,summary,evidence:'shared official research',checkedAt:meta.checkedAt||new Date().toISOString(),expiresAt:meta.expiresAt||null};
+    const need2028=derive2028Need(setters,p?.season);
+    return {pageUrl:p?.pageUrl||meta.sourceUrl||'',season:p?.season||'',setters,minHeightInches:min,maxHeightInches:max,setter_range:range,summary,evidence:'shared official research',need2028,checkedAt:meta.checkedAt||new Date().toISOString(),expiresAt:meta.expiresAt||null};
   }
   function normalizeAid(p,meta={}){
     const allowed=['Full need / need-blind','Full need / need-aware','Need-based available / limited','Merit only','No institutional aid identified','Unclear'];
@@ -56,8 +105,8 @@
     if(!parsed)throw new Error('The research service did not return usable structured data.');return parsed;
   }
   function setterPrompt(d){return `Research the CURRENT or MOST RECENT OFFICIAL women's volleyball roster for ${d.name}.
-Use ONLY the university's official athletics website as the roster source. Identify every player whose listed position includes Setter, S, S/RS, S/OPP, or equivalent. Extract full name, class/year, position and exact listed height. Use the most recent official roster if a 2026/current roster is unavailable. Never infer missing heights.
-Return ONLY JSON: {"pageUrl":"https://official-roster-url","season":"2026 or latest year","setters":[{"name":"","classYear":"","position":"","height":"5'7\\\"","heightInches":67}],"minHeightInches":67,"maxHeightInches":70,"summary":"Concise factual explanation for a 1.71 m / 5'7¼ setter."}. Never invent data.`}
+Use ONLY the university's official athletics website as the roster source. Identify every player whose listed position includes Setter, S, S/RS, S/OPP, or equivalent. Extract full name, exact class/year as shown on the roster, position and exact listed height. The class/year is essential because this project estimates whether a setter roster opening may exist when Sara enters college in fall 2028. Use the most recent official roster if a 2026/current roster is unavailable. Never infer missing heights or class years.
+Return ONLY JSON: {"pageUrl":"https://official-roster-url","season":"2026 or latest year","setters":[{"name":"","classYear":"Fr./So./Jr./Sr./Gr. exactly as listed","position":"","height":"5'7\\\"","heightInches":67}],"minHeightInches":67,"maxHeightInches":70,"summary":"Concise factual explanation for a 1.71 m / 5'7¼ setter."}. Never invent data.`}
   function aidPrompt(d){return `Research undergraduate financial aid for INTERNATIONAL applicants at ${d.name} using ONLY official university admissions and financial-aid webpages. Determine need-based availability, need-blind vs need-aware, whether 100% demonstrated need is met, merit availability, and material limitations.
 Return ONLY JSON: {"sourceUrl":"https://official-university-url","category":"Full need / need-blind|Full need / need-aware|Need-based available / limited|Merit only|No institutional aid identified|Unclear","needBlind":true,"meetsFullNeed":true,"needBasedAvailable":true,"meritAvailable":false,"summary":"2–5 sentence precise explanation."}. If ambiguous, use Unclear.`}
 
@@ -100,18 +149,18 @@ Return ONLY JSON: {"sourceUrl":"https://official-university-url","category":"Ful
     box.innerHTML=`<h4>Research missing / outdated data</h4>
       <div class="small" style="margin-bottom:9px">${shared?'Shared cache is active. Existing research is reused for every visitor; the AI research service is called only when no fresh shared result exists or when Refresh is explicitly used.':'Shared backend is not connected yet; research currently falls back to this browser only.'}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button id="researchBoth" class="action primary">Research setter + international aid</button>
-        <button id="researchSetter" class="action">Research setter heights</button>
+        <button id="researchBoth" class="action primary">Research setter roster + aid</button>
+        <button id="researchSetter" class="action">Research setter roster + 2028 opening</button>
         <button id="researchAid" class="action">Research international aid</button>
-        ${shared?'<button id="refreshSetter" class="action">Refresh setter research</button><button id="refreshAid" class="action">Refresh aid research</button>':''}
+        ${shared?'<button id="refreshSetter" class="action">Refresh setter / 2028 research</button><button id="refreshAid" class="action">Refresh aid research</button>':''}
       </div>
       <div id="schoolResearchStatus" class="status"></div>
-      <div class="small" style="margin-top:8px">Setter last checked: ${dateText(d.setter_checked_at)||'—'} · Aid last checked: ${dateText(d.aid_checked_at)||'—'}</div>`;
+      <div class="small" style="margin-top:8px">Setter / 2028 last checked: ${dateText(d.setter_checked_at)||'—'} · Aid last checked: ${dateText(d.aid_checked_at)||'—'}</div>`;
     host.appendChild(box);
-    const run=async(type,force=false)=>{status(`${force?'Refreshing':'Checking'} ${type==='setter'?'setter-height evidence':'international financial aid'}…`);disable(true);try{const r=await researchType(d,type,force);saveLocal(d,type,r.value);rerender();openSchool(d.key);status(r.cached&&!force?'Loaded from shared cache — no new AI research used.':`${type==='setter'?'Setter':'Aid'} research completed and saved${r.shared?' to the shared database':' on this device'}.`)}catch(e){status(`${type==='setter'?'Setter':'Aid'} research failed: ${e.message}`,true)}finally{disable(false)}};
+    const run=async(type,force=false)=>{status(`${force?'Refreshing':'Checking'} ${type==='setter'?'setter roster, heights and 2028 opening':'international financial aid'}…`);disable(true);try{const r=await researchType(d,type,force);saveLocal(d,type,r.value);rerender();openSchool(d.key);status(r.cached&&!force?'Loaded from shared cache — no new AI research used.':`${type==='setter'?'Setter / 2028':'Aid'} research completed and saved${r.shared?' to the shared database':' on this device'}.`)}catch(e){status(`${type==='setter'?'Setter':'Aid'} research failed: ${e.message}`,true)}finally{disable(false)}};
     document.getElementById('researchSetter').onclick=()=>run('setter',false);
     document.getElementById('researchAid').onclick=()=>run('aid',false);
-    document.getElementById('researchBoth').onclick=async()=>{disable(true);status('Checking shared cache for setter and aid research…');let errors=[];try{for(const type of ['setter','aid']){try{const r=await researchType(d,type,false);saveLocal(d,type,r.value)}catch(e){errors.push(`${type}: ${e.message}`)}}rerender();openSchool(d.key);status(errors.length?`Finished with an issue: ${errors.join('; ')}`:`Both research tasks are available${SHARED_URL?' in the shared database':''}.`,!!errors.length)}finally{disable(false)}};
+    document.getElementById('researchBoth').onclick=async()=>{disable(true);status('Checking setter-roster / 2028 and aid research…');let errors=[];try{for(const type of ['setter','aid']){try{const r=await researchType(d,type,false);saveLocal(d,type,r.value)}catch(e){errors.push(`${type}: ${e.message}`)}}rerender();openSchool(d.key);status(errors.length?`Finished with an issue: ${errors.join('; ')}`:`Both research tasks are available${SHARED_URL?' in the shared database':''}.`,!!errors.length)}finally{disable(false)}};
     const rs=document.getElementById('refreshSetter');if(rs)rs.onclick=()=>run('setter',true);
     const ra=document.getElementById('refreshAid');if(ra)ra.onclick=()=>run('aid',true);
   }
