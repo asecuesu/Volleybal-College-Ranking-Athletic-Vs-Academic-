@@ -6,6 +6,7 @@
   const admissionsValues = ['Moderate', 'High', 'Extreme'];
   const selectedFits = new Set();
   const selectedAdmissions = new Set();
+  const TARGET_SEASON = 2028;
 
   // ----- Add / relabel controls -----
   const aidSelect = document.getElementById('aid');
@@ -32,9 +33,9 @@
         <option value="High">High opening signal</option>
         <option value="HighMedium">High + medium</option>
         <option value="Low">Low opening signal</option>
-        <option value="unknown">Not researched</option>
+        <option value="unknown">Not researched / unclear</option>
       </select>
-      <div class="small" style="margin-top:4px">Projects current setters forward to Sara’s fall 2028 entry year.</div>`;
+      <div class="small" style="margin-top:4px">Projects the latest official setter roster toward Sara’s fall 2028 entry year.</div>`;
     const setterField = setterSelect.closest('div');
     setterField?.insertAdjacentElement('afterend', wrap);
   }
@@ -42,7 +43,52 @@
   function setterUnresearched(d){
     return !d.setter_evidence || String(d.setter_evidence).toLowerCase() === 'not researched';
   }
-  function needSignal(d){ return d.setter_need_2028 || 'Not researched'; }
+  function rosterClassIndex(v){
+    const s=String(v||'').toLowerCase();
+    if(/graduate|grad\.?|\bgr\.?\b|fifth|5th/.test(s))return 5;
+    if(/senior|\bsr\.?\b/.test(s))return 4;
+    if(/junior|\bjr\.?\b/.test(s))return 3;
+    if(/sophomore|\bso\.?\b/.test(s))return 2;
+    if(/freshman|first.year|\bfr\.?\b/.test(s))return 1;
+    return null;
+  }
+  function needInfo(d){
+    const detail=d.setter_need_2028_detail;
+    const projected=detail?.projected||[];
+    if(!projected.length){
+      const sig=d.setter_need_2028||'Not researched';
+      return {signal:sig,note:d.setter_need_2028_note||'Not researched yet. Run the setter-roster research to inspect current setter class years.'};
+    }
+    const rosterSeason=+(detail.rosterSeason||new Date().getFullYear());
+    const known=projected.map(x=>{
+      const idx=rosterClassIndex(x.classYear);
+      if(!idx)return null;
+      // D1 adopted a continuous five-year eligibility period in 2026. For a normal
+      // class progression, FR/SO/JR/SR map roughly to 5/4/3/2 years in that window.
+      // D3 remains on its existing model for this projection. Both are approximations.
+      const lastSeason=d.division==='D1'
+        ? rosterSeason + Math.max(0,5-idx)
+        : rosterSeason + Math.max(0,4-idx);
+      return {name:x.name||'Setter',classYear:x.classYear||'',lastSeason};
+    }).filter(Boolean);
+    if(!known.length || known.length<Math.ceil(projected.length/2))return {signal:'Unclear',note:'Current setter class-year information is too incomplete to make a useful fall 2028 roster projection.'};
+    const departing=known.filter(x=>x.lastSeason<TARGET_SEASON);
+    const finalInTarget=known.filter(x=>x.lastSeason===TARGET_SEASON);
+    const remaining=known.filter(x=>x.lastSeason>=TARGET_SEASON);
+    let signal='Low';
+    if(departing.length>0 && remaining.length<=1)signal='High';
+    else if(departing.length>0 || finalInTarget.length>0)signal='Medium';
+    const namesDepart=departing.map(x=>`${x.name} (${x.classYear})`).join(', ');
+    const namesRemain=remaining.map(x=>`${x.name} (${x.classYear})`).join(', ');
+    let note;
+    if(signal==='High')note=`High current-roster opening signal: ${departing.length} researched setter${departing.length===1?' is':'s are'} projected outside the normal eligibility/class window before fall 2028, with only ${remaining.length} of the currently listed setters projected to remain. ${namesDepart?`Potential turnover: ${namesDepart}.`:''}`;
+    else if(signal==='Medium')note=`Medium current-roster opening signal: the present setter group shows turnover before or around fall 2028, but at least one current setter may still remain. ${namesRemain?`Potentially remaining: ${namesRemain}.`:''}`;
+    else note=`Low current-roster opening signal: the researched current setters largely project to remain within their normal roster/eligibility window through fall 2028. ${namesRemain?`Potentially remaining: ${namesRemain}.`:''}`;
+    if(d.division==='D1')note += ' D1 now uses a five-year age-based eligibility period, so roster class is only an approximation of actual remaining eligibility, especially for current athletes in transition.';
+    else note += ' D3 class-year projection is also approximate and can be changed by transfers, roster decisions and any future eligibility-rule changes.';
+    return {signal,note};
+  }
+  function needSignal(d){ return needInfo(d).signal; }
 
   // This replaces the base filter logic for the enhanced controls. In particular,
   // D1 rows bypass the international-aid criterion.
@@ -173,9 +219,9 @@
     if(!d)return;
     const grid=document.querySelector('#dContent .detailGrid');
     if(grid){
-      const sig=needSignal(d);
-      const note=d.setter_need_2028_note || 'Not researched yet. Run “Research setter roster + 2028 opening” below to inspect the current official roster and setter class years.';
-      grid.insertAdjacentHTML('beforeend', `<div class="detailBox"><h4>2028 setter roster opening</h4><b>${esc(sig)}</b><div class="small">${esc(note)}</div></div>`);
+      const info=needInfo(d);
+      const note=info.note || 'Not researched yet. Run “Research setter roster + 2028 opening” below to inspect the current official roster and setter class years.';
+      grid.insertAdjacentHTML('beforeend', `<div class="detailBox"><h4>2028 setter roster opening</h4><b>${esc(info.signal)}</b><div class="small">${esc(note)}</div></div>`);
     }
     // Aid is still useful background information for D1, but it is not part of the aid filter.
     if(d.division==='D1'){
@@ -194,14 +240,14 @@
   if(sources && !document.getElementById('recruiting2028Method')){
     sources.insertAdjacentHTML('beforebegin', `<div id="recruiting2028Method">
       <h3 style="margin-top:18px">2028 setter-opening signal</h3>
-      <p>This is a <b>current-roster planning signal</b>, not a prediction that a coach will recruit a setter. The research identifies the setters on the latest official roster, records each listed class year, and projects normal year-by-year eligibility to Sara’s expected fall 2028 entry season.</p>
+      <p>This is a <b>current-roster planning signal</b>, not a prediction that a coach will recruit a setter. The research identifies setters on the latest official roster, records each listed class year, and projects the current setter pipeline toward Sara’s expected fall 2028 entry season.</p>
       <ul>
-        <li><b>High:</b> at least one current setter is projected to finish before fall 2028 and no more than one currently listed setter projects to remain eligible in 2028.</li>
-        <li><b>Medium:</b> meaningful turnover is projected before or during 2028, but at least one current setter may still remain.</li>
-        <li><b>Low:</b> the currently listed setter group largely projects to remain through 2028, with no obvious pre-2028 opening from today’s roster.</li>
+        <li><b>High:</b> at least one currently listed setter projects to leave the normal roster/eligibility window before fall 2028 and no more than one current setter projects to remain.</li>
+        <li><b>Medium:</b> meaningful turnover is projected before or around 2028, but at least one current setter may still remain.</li>
+        <li><b>Low:</b> the currently listed setter group largely projects to remain through 2028, with no obvious opening from today’s roster.</li>
         <li><b>Unclear / Not researched:</b> class-year information is incomplete or the roster has not yet been researched.</li>
       </ul>
-      <div class="notice"><b>Important:</b> this does not account for future recruits, transfers, redshirts, medical waivers, fifth-year eligibility, position changes or a coach deciding to carry more/fewer setters. It is best used as an outreach-priority signal, then confirmed directly with the coaching staff.</div>
+      <div class="notice"><b>Eligibility caveat:</b> Division I adopted a continuous five-year age-based eligibility period in 2026, so a roster label such as Jr. or Sr. does not perfectly identify remaining eligibility; the transition rules for current athletes can also change the result. The app therefore treats this as a probability signal, not a vacancy forecast. D3 projections use current class progression and are likewise approximate. Future recruits, transfers, roster decisions and rule changes can materially alter the 2028 setter room.</div>
       <h3 style="margin-top:18px">How the international-aid filter works</h3>
       <p>The international-aid selector now filters <b>D3 schools only</b>. D1 schools remain in the results regardless of that selector because athletic scholarship discussions are handled separately. D1 athletic aid is possible, but an offer or full scholarship should never be assumed until the coaching staff confirms it.</p>
     </div>`);
@@ -211,7 +257,7 @@
   function enhancedDownloadCSV(){
     const headers=['School','Division','Conference','Academic rank 2026','Athletic fit','Admissions reach','VB strength','2025 record','Setter range','Setter evidence','2028 setter opening','2028 opening note','Aid category','Aid note','Coach emails'];
     const lines=[headers.map(csvCell).join(',')];
-    filtered.forEach(d=>lines.push([d.name,d.division,d.conference,d.academic_rank_2026,d.athletic_fit,d.admissions_reach,d.vb_strength,d.record_2025,d.setter_range,d.setter_evidence,needSignal(d),d.setter_need_2028_note||'',d.aid_category,d.aid_note,d.coach_contacts.map(c=>c.email).filter(Boolean).join('; ')].map(csvCell).join(',')));
+    filtered.forEach(d=>{const info=needInfo(d);lines.push([d.name,d.division,d.conference,d.academic_rank_2026,d.athletic_fit,d.admissions_reach,d.vb_strength,d.record_2025,d.setter_range,d.setter_evidence,info.signal,info.note,d.aid_category,d.aid_note,d.coach_contacts.map(c=>c.email).filter(Boolean).join('; ')].map(csvCell).join(','))});
     const blob=new Blob([lines.join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='sara-volleyball-targets-filtered.csv';a.click();URL.revokeObjectURL(a.href);
   }
 
