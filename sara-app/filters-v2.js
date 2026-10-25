@@ -2,7 +2,7 @@
 // International-aid filtering applies to D3 schools only; D1 schools remain visible
 // because athletic scholarship evaluation is a separate recruiting question.
 (() => {
-  const fitValues = ['Strong', 'Good', 'Reach'];
+  const fitValues = ['Strong', 'Good', 'Reach', 'Unassessed'];
   const admissionsValues = ['Moderate', 'High', 'Extreme'];
   const selectedFits = new Set();
   const selectedAdmissions = new Set();
@@ -13,12 +13,12 @@
   if (aidSelect) {
     const aidField = aidSelect.closest('div');
     const label = aidField?.querySelector('label');
-    if (label) label.textContent = 'International aid (D3 only)';
+    if (label) label.textContent = 'International aid (when relevant)';
     if (aidField && !aidField.querySelector('.d3AidHint')) {
       const hint = document.createElement('div');
       hint.className = 'small d3AidHint';
       hint.style.marginTop = '4px';
-      hint.textContent = 'Only filters D3. D1 schools always remain; athletic aid is evaluated separately.';
+      hint.textContent = 'Filters D3 and D1 programs that do not offer athletic scholarships (for example Ivy League). Scholarship-offering D1 programs remain visible.';
       aidField.appendChild(hint);
     }
   }
@@ -119,7 +119,7 @@
       if(d.academic_rank_2026>max)return false;
 
       // Financial-aid selector intentionally applies only to D3 schools.
-      if(aid!=='All' && d.division==='D3'){
+      if(aid!=='All' && (d.division==='D3' || d.athletic_scholarships===false)){
         const g=aidGroup(d);
         if(aid==='researched'&&g==='unknown')return false;
         if(aid==='full'&&g!=='full')return false;
@@ -200,12 +200,12 @@
     baseRenderOverview();
     const aidMetric=document.getElementById('ovAid');
     if(aidMetric){
-      aidMetric.textContent=filtered.filter(d=>d.division==='D3'&&d.aid_category!=='Not researched').length;
+      aidMetric.textContent=filtered.filter(d=>(d.division==='D3'||d.athletic_scholarships===false)&&d.aid_category!=='Not researched').length;
       const card=aidMetric.closest('.card');
       const smalls=card?.querySelectorAll('.small');
       if(smalls?.length){
-        smalls[0].textContent='D3 international aid researched';
-        if(smalls[1])smalls[1].textContent='Aid policy checked for D3 targets; D1 athletic aid is handled separately.';
+        smalls[0].textContent='Relevant international aid researched';
+        if(smalls[1])smalls[1].textContent='Aid policy checked for D3 and non-athletic-scholarship D1 targets; other D1 athletic aid is handled separately.';
       }
     }
   };
@@ -262,7 +262,7 @@
       </ul>
       <div class="notice"><b>Eligibility caveat:</b> Division I adopted a continuous five-year age-based eligibility period in 2026, so a roster label such as Jr. or Sr. does not perfectly identify remaining eligibility; the transition rules for current athletes can also change the result. The app therefore treats this as a probability signal, not a vacancy forecast. D3 projections use current class progression and are likewise approximate. Future recruits, transfers, roster decisions and rule changes can materially alter the 2028 setter room.</div>
       <h3 style="margin-top:18px">How the international-aid filter works</h3>
-      <p>The international-aid selector now filters <b>D3 schools only</b>. D1 schools remain in the results regardless of that selector because athletic scholarship discussions are handled separately. D1 athletic aid is possible, but an offer or full scholarship should never be assumed until the coaching staff confirms it.</p>
+      <p>The international-aid selector filters <b>D3 schools and D1 programs that do not offer athletic scholarships</b> (notably Ivy League programs). Other D1 schools remain in the results regardless of that selector because athletic scholarship discussions are handled separately. An athletic-aid offer or full scholarship should never be assumed until the coaching staff confirms it.</p>
     </div>`);
   }
 
@@ -293,7 +293,7 @@
       document.getElementById('aid').value = 'All';
       document.getElementById('setter').value = 'All';
       if(document.getElementById('need2028'))document.getElementById('need2028').value='All';
-      document.getElementById('rank').value = 80;
+      document.getElementById('rank').value = 100;
       selectedFits.clear(); selectedAdmissions.clear();
       setButtonState('fitMulti', selectedFits, fitValues);
       setButtonState('admissionsMulti', selectedAdmissions, admissionsValues);
