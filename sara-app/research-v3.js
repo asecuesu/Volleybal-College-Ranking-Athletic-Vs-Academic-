@@ -188,8 +188,22 @@ Return ONLY JSON: {"sourceUrl":"https://official-university-url","category":"Ful
     return {completed,failed,total:list.length};
   };
 
-  const local=readLocal();DATA.forEach(d=>applyRecord(d,local[d.key]));
+  const local=readLocal();
+  let restoredLocal=0;
+  DATA.forEach(d=>{
+    if(local[d.key]){
+      applyRecord(d,local[d.key]);
+      restoredLocal++;
+    }
+  });
   openSchool=function(key){baseOpenSchool(key);const d=DATA.find(x=>x.key===key);if(d)appendControls(d)};
   window.dispatchEvent(new Event('sara-research-ready'));
+
+  // Important: filters-v2 renders before this file loads. Without a second render,
+  // persisted setter/2028 research is restored into DATA but the visible table and
+  // 2028 filter still reflect the pre-cache state after a page refresh.
+  if(restoredLocal){
+    setTimeout(()=>rerender(),0);
+  }
   preloadShared();
 })();
