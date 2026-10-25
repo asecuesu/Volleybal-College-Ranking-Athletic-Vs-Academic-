@@ -43,7 +43,7 @@ async function callResearchWorker(prompt: string) {
 function setterPrompt(schoolName: string) {
   return `Research the CURRENT or MOST RECENT OFFICIAL women's volleyball roster for ${schoolName}.
 Use ONLY the university's official athletics website as the roster source. Do not use recruiting sites, Wikipedia, social media, or third-party roster databases.
-Identify every player whose listed position includes Setter, S, S/RS, S/OPP, or an equivalent setter designation. Extract the player's full name, class/year, exact listed position, and exact listed height.
+Identify every player whose listed position includes Setter, S, S/RS, S/OPP, or an equivalent setter designation. Extract the player's full name, exact class/year as shown on the roster, exact listed position, and exact listed height. The class/year is essential because the app projects whether the current setter room may create an opening for Sara's fall 2028 recruiting class.
 If a 2026/current roster is unavailable, use the most recent official roster you can find and state the season/year clearly. Do not infer a player's height and do not estimate a missing height.
 Return ONLY valid JSON in exactly this shape:
 {"pageUrl":"https://official-roster-url","season":"2026 or latest year","setters":[{"name":"","classYear":"","position":"","height":"5'7\\\"","heightInches":67}],"minHeightInches":67,"maxHeightInches":70,"summary":"Concise factual explanation of what this roster evidence implies for a 1.71 m / 5'7¼ setter."}
@@ -65,11 +65,23 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    let adminKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    const secretKeysRaw = Deno.env.get('SUPABASE_SECRET_KEYS');
+    if (secretKeysRaw) {
+      try { adminKey = JSON.parse(secretKeysRaw)?.default || adminKey; } catch {}
+    }
+    if (!adminKey) throw new Error('No Supabase admin key is available to the Edge Function runtime.');
+
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      supabaseUrl,
+      adminKey,
       { auth: { persistSession: false } }
     );
+
+    if (body.action === 'health') {
+      return json({ ok: true, service: 'research-school' }, 200, origin);
+    }
 
     if (body.action === 'list') {
       const { data, error } = await supabase
