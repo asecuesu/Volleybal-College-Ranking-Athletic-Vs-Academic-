@@ -35,7 +35,10 @@
         <option value="Low">Low opening signal</option>
         <option value="unknown">Not researched / unclear</option>
       </select>
-      <div class="small" style="margin-top:4px">Projects the latest official setter roster toward Sara’s fall 2028 entry year.</div>`;
+      <div class="small" style="margin-top:4px">Projects the latest official setter roster toward Sara’s fall 2028 entry year.</div>
+      <div id="need2028Status" class="small" style="margin-top:5px;font-weight:600"></div>
+      <button id="researchVisible2028" type="button" class="action" style="margin-top:7px" disabled>Research 2028 openings for visible schools</button>
+      <div id="researchVisible2028Status" class="small" style="margin-top:5px"></div>`;
     const setterField = setterSelect.closest('div');
     setterField?.insertAdjacentElement('afterend', wrap);
   }
@@ -89,6 +92,15 @@
     return {signal,note};
   }
   function needSignal(d){ return needInfo(d).signal; }
+  function isNeedResearched(d){ return ['High','Medium','Low'].includes(needSignal(d)); }
+  function update2028ResearchStatus(){
+    const status=document.getElementById('need2028Status');
+    if(!status)return;
+    const n=DATA.filter(isNeedResearched).length;
+    status.textContent=n
+      ? `${n} of ${DATA.length} schools currently have a usable 2028-opening signal.`
+      : `No schools have a usable 2028-opening signal yet on this device. Use the research button below or open a school and run its setter-roster research.`;
+  }
 
   // This replaces the base filter logic for the enhanced controls. In particular,
   // D1 rows bypass the international-aid criterion.
@@ -133,6 +145,7 @@
       return true;
     });
     document.getElementById('count').textContent=`${filtered.length} of ${DATA.length} schools shown`;
+    update2028ResearchStatus();
     renderAll();
   }
 
@@ -289,6 +302,45 @@
   }
   const download=document.getElementById('download');
   if(download)download.onclick=enhancedDownloadCSV;
+
+  const researchVisibleBtn=document.getElementById('researchVisible2028');
+  const researchVisibleStatus=document.getElementById('researchVisible2028Status');
+  function syncResearchButton(){
+    if(!researchVisibleBtn)return;
+    researchVisibleBtn.disabled=typeof window.SARA_research2028Batch!=='function';
+  }
+  if(researchVisibleBtn){
+    researchVisibleBtn.onclick=async()=>{
+      if(typeof window.SARA_research2028Batch!=='function')return;
+      const previous=document.getElementById('need2028')?.value||'All';
+      if(document.getElementById('need2028'))document.getElementById('need2028').value='All';
+      applyMultiFilters();
+      const keys=filtered.filter(d=>!isNeedResearched(d)).map(d=>d.key);
+      if(document.getElementById('need2028'))document.getElementById('need2028').value=previous;
+      applyMultiFilters();
+      if(!keys.length){
+        if(researchVisibleStatus)researchVisibleStatus.textContent='All currently visible schools already have a usable 2028-opening signal.';
+        return;
+      }
+      if(keys.length>20 && !window.confirm(`This will research up to ${keys.length} schools and may use AI/search credits for uncached schools. Continue?`))return;
+      researchVisibleBtn.disabled=true;
+      if(researchVisibleStatus)researchVisibleStatus.textContent=`Starting 0 of ${keys.length}…`;
+      try{
+        const result=await window.SARA_research2028Batch(keys,(done,total,key,state)=>{
+          if(researchVisibleStatus)researchVisibleStatus.textContent=`Researching ${done} of ${total}… ${state||key}`;
+        });
+        if(researchVisibleStatus)researchVisibleStatus.textContent=`Finished: ${result.completed} researched, ${result.failed} failed. Re-apply the 2028-opening filter to see High / Medium / Low results.`;
+        applyMultiFilters();
+      }catch(e){
+        if(researchVisibleStatus)researchVisibleStatus.textContent='Batch research stopped: '+e.message;
+      }finally{
+        syncResearchButton();
+      }
+    };
+  }
+  window.addEventListener('sara-research-ready',syncResearchButton);
+  syncResearchButton();
+  update2028ResearchStatus();
 
   applyMultiFilters();
 
