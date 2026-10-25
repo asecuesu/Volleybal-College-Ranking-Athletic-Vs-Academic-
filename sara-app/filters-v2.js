@@ -18,7 +18,7 @@
       const hint = document.createElement('div');
       hint.className = 'small d3AidHint';
       hint.style.marginTop = '4px';
-      hint.textContent = 'Filters D3 and D1 programs that do not offer athletic scholarships (for example Ivy League). Scholarship-offering D1 programs remain visible.';
+      hint.textContent = 'Filters D3 and D1 programs such as the Ivy League where need-based aid, rather than athletic scholarships, is the relevant financing route. Scholarship-offering D1 programs remain visible.';
       aidField.appendChild(hint);
     }
   }
@@ -205,7 +205,7 @@
       const smalls=card?.querySelectorAll('.small');
       if(smalls?.length){
         smalls[0].textContent='Relevant international aid researched';
-        if(smalls[1])smalls[1].textContent='Aid policy checked for D3 and non-athletic-scholarship D1 targets; other D1 athletic aid is handled separately.';
+        if(smalls[1])smalls[1].textContent='Aid policy checked for D3 and Ivy/non-athletic-scholarship D1 targets; scholarship-offering D1 programs are handled separately.';
       }
     }
   };
@@ -262,7 +262,7 @@
       </ul>
       <div class="notice"><b>Eligibility caveat:</b> Division I adopted a continuous five-year age-based eligibility period in 2026, so a roster label such as Jr. or Sr. does not perfectly identify remaining eligibility; the transition rules for current athletes can also change the result. The app therefore treats this as a probability signal, not a vacancy forecast. D3 projections use current class progression and are likewise approximate. Future recruits, transfers, roster decisions and rule changes can materially alter the 2028 setter room.</div>
       <h3 style="margin-top:18px">How the international-aid filter works</h3>
-      <p>The international-aid selector filters <b>D3 schools and D1 programs that do not offer athletic scholarships</b> (notably Ivy League programs). Other D1 schools remain in the results regardless of that selector because athletic scholarship discussions are handled separately. An athletic-aid offer or full scholarship should never be assumed until the coaching staff confirms it.</p>
+      <p>The international-aid selector filters <b>D3 schools and D1 programs where need-based aid is the relevant financing route</b>, notably the Ivy League. Ivy schools do not award athletic scholarships, but international applicants may qualify for institutional need-based aid under each university's policy. Other D1 schools remain in the results regardless of that selector because athletic scholarship discussions are handled separately.</p>
     </div>`);
   }
 
