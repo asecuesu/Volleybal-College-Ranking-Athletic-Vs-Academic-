@@ -165,7 +165,31 @@ Return ONLY JSON: {"sourceUrl":"https://official-university-url","category":"Ful
     const ra=document.getElementById('refreshAid');if(ra)ra.onclick=()=>run('aid',true);
   }
 
+  // Public batch helper used by the 2028-opening filter panel. It remains opt-in;
+  // each school first checks the shared/local cache and researches only when needed.
+  window.SARA_research2028Batch=async function(keys,onProgress){
+    const list=[...new Set(keys||[])];
+    let completed=0,failed=0;
+    for(let i=0;i<list.length;i++){
+      const key=list[i];
+      const d=DATA.find(x=>x.key===key);
+      if(!d){failed++;continue}
+      try{
+        if(onProgress)onProgress(i,list.length,key,d.name);
+        const r=await researchType(d,'setter',false);
+        saveLocal(d,'setter',r.value);
+        completed++;
+      }catch(e){
+        failed++;
+        if(onProgress)onProgress(i+1,list.length,key,`${d.name}: failed`);
+      }
+    }
+    rerender();
+    return {completed,failed,total:list.length};
+  };
+
   const local=readLocal();DATA.forEach(d=>applyRecord(d,local[d.key]));
   openSchool=function(key){baseOpenSchool(key);const d=DATA.find(x=>x.key===key);if(d)appendControls(d)};
+  window.dispatchEvent(new Event('sara-research-ready'));
   preloadShared();
 })();
