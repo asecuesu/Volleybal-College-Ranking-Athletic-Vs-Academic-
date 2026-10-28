@@ -352,6 +352,11 @@
   configScript.onload = () => {
     const researchScript = document.createElement('script');
     researchScript.src = 'sara-app/research-v3.js';
+    researchScript.onload = () => {
+      const extraScript = document.createElement('script');
+      extraScript.src = 'sara-app/research-extra.js';
+      document.body.appendChild(extraScript);
+    };
     document.body.appendChild(researchScript);
   };
   document.body.appendChild(configScript);
