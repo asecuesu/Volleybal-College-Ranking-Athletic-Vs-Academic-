@@ -80,7 +80,7 @@
     updateCounts();
   }
   function relevantAid(d){return d.division==='D3'||d.athletic_scholarships===false}
-  function missingAthletic(d){return d.athletic_fit==='Unassessed'||!d.athletic_checked_at}
+  function missingAthletic(d){return !d.athletic_fit||d.athletic_fit==='Unassessed'}
   function missingAid(d){return relevantAid(d)&&(!d.aid_category||d.aid_category==='Not researched')}
   function updateCounts(){
     const el=document.getElementById('coreResearchCounts');
