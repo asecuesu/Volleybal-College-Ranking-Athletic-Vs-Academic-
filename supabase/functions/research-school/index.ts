@@ -8,6 +8,7 @@ const ALLOWED_ORIGINS = new Set([
 const RESEARCH_WORKER = 'https://divine-dust-7329.andrei-secuesu.workers.dev';
 const SETTER_TTL_DAYS = 120;
 const AID_TTL_DAYS = 270;
+const ATHLETIC_TTL_DAYS = 90;
 
 function cors(origin: string | null) {
   const allow = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://asecuesu.github.io';
@@ -57,6 +58,30 @@ Return ONLY valid JSON in exactly this shape:
 {"sourceUrl":"https://official-university-url","category":"Full need / need-blind|Full need / need-aware|Need-based available / limited|Merit only|No institutional aid identified|Unclear","needBlind":true,"meetsFullNeed":true,"needBasedAvailable":true,"meritAvailable":false,"summary":"2–5 sentence precise explanation for an international undergraduate applicant."}
 Do not infer policy from U.S.-citizen aid rules. If the official policy is ambiguous, use category Unclear rather than guessing.`;
 }
+function athleticPrompt(schoolName: string) {
+  return `Research the CURRENT or MOST RECENT COMPLETED women's volleyball season and current/most recent official roster for ${schoolName}.
+Use ONLY the university's official athletics website and official conference/NCAA pages. Do not use recruiting sites, Wikipedia, social media, blogs, or third-party rankings.
+
+Sara Pop is a 1.71 m / 5'7¼" Romanian setter, Romanian U17 national champion, Best Setter U17 2025/26, with U19 national-level experience. She expects to enter college in fall 2028.
+
+Find:
+1) most recent season/year;
+2) overall wins/losses;
+3) conference wins/losses and conference finish if officially available;
+4) notable postseason/title context;
+5) current setter heights and class years if they are clearly listed on the official roster;
+6) whether Sara's athletic profile looks Strong, Good, or Reach for this program.
+
+Use this rubric:
+- Strong = her national-level credentials and setter profile look clearly plausible for this program, subject to roster need.
+- Good = credible recruiting fit, but materially competitive and/or current setter profile is somewhat taller/stronger.
+- Reach = program level, roster profile, or setter-height standard makes recruitment materially difficult, although outreach may still be worthwhile.
+Do NOT use admissions selectivity or academic ranking in the athletic-fit classification.
+
+Return ONLY valid JSON:
+{"sourceUrl":"https://official-athletics-url","season":"2026 or latest","overallWins":0,"overallLosses":0,"conferenceWins":0,"conferenceLosses":0,"conferenceFinish":"e.g. 4th / tournament champion / unavailable","postseason":"concise official context","setters":[{"name":"","classYear":"","height":"5'8\\\"","heightInches":68}],"athleticFit":"Strong|Good|Reach","fitRationale":"2–4 sentence factual explanation tied to Sara's profile.","summary":"Concise season/program summary."}
+Use null when an official numeric field cannot be established. Never invent data.`;
+}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -93,8 +118,8 @@ Deno.serve(async (req) => {
     }
 
     const { schoolKey, schoolName, type, force = false, lookupOnly = false } = body;
-    if (!schoolKey || !['setter', 'aid'].includes(type)) {
-      return json({ error: 'schoolKey and type=setter|aid are required' }, 400, origin);
+    if (!schoolKey || !['setter', 'aid', 'athletic'].includes(type)) {
+      return json({ error: 'schoolKey and type=setter|aid|athletic are required' }, 400, origin);
     }
 
     const { data: existing, error: readError } = await supabase
@@ -120,8 +145,9 @@ Deno.serve(async (req) => {
 
     if (!schoolName) return json({ error: 'schoolName is required when research is needed' }, 400, origin);
 
-    const payload = await callResearchWorker(type === 'setter' ? setterPrompt(schoolName) : aidPrompt(schoolName));
-    const ttlDays = type === 'setter' ? SETTER_TTL_DAYS : AID_TTL_DAYS;
+    const prompt = type === 'setter' ? setterPrompt(schoolName) : type === 'aid' ? aidPrompt(schoolName) : athleticPrompt(schoolName);
+    const payload = await callResearchWorker(prompt);
+    const ttlDays = type === 'setter' ? SETTER_TTL_DAYS : type === 'aid' ? AID_TTL_DAYS : ATHLETIC_TTL_DAYS;
     const checkedAt = new Date().toISOString();
     const expiresAt = new Date(now + ttlDays * 86400000).toISOString();
     const sourceUrl = type === 'setter' ? (payload.pageUrl || null) : (payload.sourceUrl || null);
