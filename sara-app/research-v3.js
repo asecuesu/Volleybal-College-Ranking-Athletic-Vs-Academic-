@@ -132,7 +132,7 @@ Return ONLY JSON: {"sourceUrl":"https://official-university-url","category":"Ful
       (r.rows||[]).forEach(row=>{
         grouped[row.school_key]=grouped[row.school_key]||{};
         const meta={checkedAt:row.checked_at,expiresAt:row.expires_at,sourceUrl:row.source_url};
-        grouped[row.school_key][row.research_type]=row.research_type==='setter'?normalizeSetter(row.payload,meta):normalizeAid(row.payload,meta);
+        if(row.research_type==='setter')grouped[row.school_key].setter=normalizeSetter(row.payload,meta);else if(row.research_type==='aid')grouped[row.school_key].aid=normalizeAid(row.payload,meta);
       });
       DATA.forEach(d=>{if(grouped[d.key]){applyRecord(d,grouped[d.key]);const local=readLocal();local[d.key]={...(local[d.key]||{}),...grouped[d.key]};writeLocal(local)}});
       const aid=document.getElementById('aid');if(aid)aid.dispatchEvent(new Event('change',{bubbles:true}));else renderAll();
