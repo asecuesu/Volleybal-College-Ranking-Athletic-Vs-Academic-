@@ -42,6 +42,15 @@
     const allowed=['Full need / need-blind','Full need / need-aware','Need-based available / limited','Merit only','No institutional aid identified','Unclear'];
     return {sourceUrl:p.sourceUrl||meta.sourceUrl||'',category:allowed.includes(p.category)?p.category:'Unclear',needBlind:p.needBlind??null,meetsFullNeed:p.meetsFullNeed??null,needBasedAvailable:p.needBasedAvailable??null,meritAvailable:p.meritAvailable??null,summary:p.summary||'Official international-aid policy researched; returned policy was incomplete.',checkedAt:meta.checkedAt||new Date().toISOString(),expiresAt:meta.expiresAt||null};
   }
+  function normalizeCoach(p,meta){
+    meta=meta||{};
+    const coaches=(Array.isArray(p.coaches)?p.coaches:[]).filter(x=>x&&x.name).map(x=>({
+      name:String(x.name||'').trim(),
+      title:String(x.title||'Coach').trim(),
+      email:(x.email&&String(x.email).includes('@'))?String(x.email).trim():''
+    }));
+    return {sourceUrl:p.sourceUrl||p.pageUrl||meta.sourceUrl||'',coaches:coaches,summary:p.summary||'',checkedAt:meta.checkedAt||new Date().toISOString(),expiresAt:meta.expiresAt||null};
+  }
   function applyValue(d,type,v){
     if(type==='athletic'){
       if(v.athletic_fit)d.athletic_fit=v.athletic_fit;
@@ -58,6 +67,14 @@
       if(v.sourceUrl)d.aid_source=v.sourceUrl;
       d.aid_checked_at=v.checkedAt||null;
       d.aid_expires_at=v.expiresAt||null;
+    } else if(type==='coach'){
+      d.coach_contacts=Array.isArray(v.coaches)?v.coaches:[];
+      if(v.sourceUrl)d.coach_source=v.sourceUrl;
+      d.coach_checked_at=v.checkedAt||null;
+      d.coach_expires_at=v.expiresAt||null;
+      const live=(()=>{try{return JSON.parse(localStorage.getItem('sara-live-coaches')||'{}')}catch{return {}}})();
+      live[d.key]={pageUrl:v.sourceUrl||'',coaches:d.coach_contacts,checkedAt:v.checkedAt||new Date().toISOString()};
+      try{localStorage.setItem('sara-live-coaches',JSON.stringify(live))}catch{}
     }
   }
   function saveValue(d,type,v){
@@ -71,7 +88,7 @@
     const r=await sharedCall({schoolKey:d.key,schoolName:d.name,type:type,force:false});
     if(!r||!r.payload)throw new Error('No research payload returned');
     const meta={checkedAt:r.checkedAt,expiresAt:r.expiresAt,sourceUrl:r.sourceUrl};
-    return type==='athletic'?normalizeAthletic(r.payload,meta):normalizeAid(r.payload,meta);
+    return type==='athletic'?normalizeAthletic(r.payload,meta):type==='coach'?normalizeCoach(r.payload,meta):normalizeAid(r.payload,meta);
   }
   function rerender(){
     const aid=document.getElementById('aid');
@@ -82,12 +99,17 @@
   function relevantAid(d){return d.division==='D3'||d.athletic_scholarships===false}
   function missingAthletic(d){return !d.athletic_fit||d.athletic_fit==='Unassessed'}
   function missingAid(d){return relevantAid(d)&&(!d.aid_category||d.aid_category==='Not researched')}
+  function missingCoach(d){
+    const arr=Array.isArray(d.coach_contacts)?d.coach_contacts:[];
+    return !arr.some(x=>String(x.email||x.Email||'').includes('@'));
+  }
   function updateCounts(){
     const el=document.getElementById('coreResearchCounts');
     if(!el)return;
     const athletic=DATA.filter(missingAthletic).length;
     const aid=DATA.filter(missingAid).length;
-    el.textContent=athletic+' schools missing athletic-fit research · '+aid+' relevant schools missing international-aid research.';
+    const coach=DATA.filter(missingCoach).length;
+    el.textContent=athletic+' schools missing athletic-fit research · '+aid+' relevant schools missing international-aid research · '+coach+' schools missing official coach emails.';
   }
   async function runBatch(type,keys,onProgress){
     const list=[...new Set(keys||[])];
@@ -124,16 +146,17 @@
       '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
       '<button id="batchAthletic" class="action primary" type="button">Research missing athletic fit for visible schools</button>'+
       '<button id="batchAid" class="action" type="button">Research relevant aid for visible schools</button>'+
+      '<button id="batchCoach" class="action" type="button">Research missing coaches for visible schools</button>'+
       '</div><div id="coreResearchStatus" class="small" style="margin-top:8px"></div>';
     meta.insertAdjacentElement('beforebegin',panel);
     const status=document.getElementById('coreResearchStatus');
 
     async function go(type){
-      const candidates=(typeof filtered!=='undefined'?filtered:DATA).filter(type==='athletic'?missingAthletic:missingAid);
+      const candidates=(typeof filtered!=='undefined'?filtered:DATA).filter(type==='athletic'?missingAthletic:type==='coach'?missingCoach:missingAid);
       if(!candidates.length){status.textContent='Nothing missing for the currently visible schools.';return}
       if(candidates.length>20&&!window.confirm('This will research '+candidates.length+' schools and may use AI/search credits for uncached schools. Continue?'))return;
-      const a=document.getElementById('batchAthletic'),b=document.getElementById('batchAid');
-      a.disabled=true;b.disabled=true;
+      const a=document.getElementById('batchAthletic'),b=document.getElementById('batchAid'),cc=document.getElementById('batchCoach');
+      a.disabled=true;b.disabled=true;cc.disabled=true;
       status.textContent='Starting 0 of '+candidates.length+'…';
       try{
         const result=await runBatch(type,candidates.map(x=>x.key),(done,total,name)=>{
@@ -141,10 +164,11 @@
         });
         status.textContent='Finished: '+result.completed+' researched, '+result.failed+' failed. Results are stored centrally in Supabase.';
       }catch(e){status.textContent='Batch stopped: '+e.message}
-      finally{a.disabled=false;b.disabled=false;updateCounts()}
+      finally{a.disabled=false;b.disabled=false;cc.disabled=false;updateCounts()}
     }
     document.getElementById('batchAthletic').onclick=()=>go('athletic');
     document.getElementById('batchAid').onclick=()=>go('aid');
+    document.getElementById('batchCoach').onclick=()=>go('coach');
     updateCounts();
   }
 
@@ -152,13 +176,14 @@
     try{
       const r=await sharedCall({action:'list'});
       const local=readLocal();
-      (r.rows||[]).filter(row=>row.research_type==='athletic').forEach(row=>{
+      (r.rows||[]).filter(row=>row.research_type==='athletic'||row.research_type==='coach').forEach(row=>{
         const d=DATA.find(x=>x.key===row.school_key);
         if(!d)return;
-        const v=normalizeAthletic(row.payload,{checkedAt:row.checked_at,expiresAt:row.expires_at,sourceUrl:row.source_url});
-        applyValue(d,'athletic',v);
+        const meta={checkedAt:row.checked_at,expiresAt:row.expires_at,sourceUrl:row.source_url};
+        const v=row.research_type==='coach'?normalizeCoach(row.payload,meta):normalizeAthletic(row.payload,meta);
+        applyValue(d,row.research_type,v);
         local[d.key]=local[d.key]||{};
-        local[d.key].athletic=v;
+        local[d.key][row.research_type]=v;
       });
       writeLocal(local);
       rerender();
