@@ -9,6 +9,7 @@ const RESEARCH_WORKER = 'https://divine-dust-7329.andrei-secuesu.workers.dev';
 const SETTER_TTL_DAYS = 120;
 const AID_TTL_DAYS = 270;
 const ATHLETIC_TTL_DAYS = 90;
+const COACH_TTL_DAYS = 60;
 
 function cors(origin: string | null) {
   const allow = origin && ALLOWED_ORIGINS.has(origin) ? origin : 'https://asecuesu.github.io';
@@ -82,6 +83,25 @@ Return ONLY valid JSON:
 {"sourceUrl":"https://official-athletics-url","season":"2026 or latest","overallWins":0,"overallLosses":0,"conferenceWins":0,"conferenceLosses":0,"conferenceFinish":"e.g. 4th / tournament champion / unavailable","postseason":"concise official context","setters":[{"name":"","classYear":"","height":"5'8\\\"","heightInches":68}],"athleticFit":"Strong|Good|Reach","fitRationale":"2–4 sentence factual explanation tied to Sara's profile.","summary":"Concise season/program summary."}
 Use null when an official numeric field cannot be established. Never invent data.`;
 }
+function coachPrompt(schoolName: string) {
+  return `Research the CURRENT official WOMEN'S VOLLEYBALL coaching staff for ${schoolName}.
+Use ONLY official university athletics pages and official university staff directories. Make sure the staff belongs to the women's volleyball program.
+
+Find every current coaching/recruiting staff member relevant to volleyball recruiting, including:
+- Head Coach
+- Associate Head Coach
+- Assistant Coach(es)
+- Recruiting Coordinator, if the role is specifically tied to women's volleyball
+- Director of Volleyball Operations only if the official page presents that person as a recruiting/contact point
+
+For each person, extract the exact official title, full name, and official email address. If the main coaches page does not list an email, check the official athletics staff directory before returning null. Do NOT infer email formats and do not use third-party directories, recruiting sites, social media, or cached search snippets.
+
+Exclude athletic trainers, strength coaches, academic advisors, and general athletic-department staff unless they have an explicit women's-volleyball coaching/recruiting role.
+
+Return ONLY valid JSON:
+{"sourceUrl":"https://official-womens-volleyball-coaches-or-staff-page","coaches":[{"title":"Head Coach","name":"Full Name","email":"name@school.edu"}],"summary":"Concise note on the official coaching staff/contact coverage."}
+Use null for email only when no official email is published. Never invent data.`;
+}
 
 Deno.serve(async (req) => {
   const origin = req.headers.get('origin');
@@ -118,8 +138,8 @@ Deno.serve(async (req) => {
     }
 
     const { schoolKey, schoolName, type, force = false, lookupOnly = false } = body;
-    if (!schoolKey || !['setter', 'aid', 'athletic'].includes(type)) {
-      return json({ error: 'schoolKey and type=setter|aid|athletic are required' }, 400, origin);
+    if (!schoolKey || !['setter', 'aid', 'athletic', 'coach'].includes(type)) {
+      return json({ error: 'schoolKey and type=setter|aid|athletic|coach are required' }, 400, origin);
     }
 
     const { data: existing, error: readError } = await supabase
@@ -145,9 +165,9 @@ Deno.serve(async (req) => {
 
     if (!schoolName) return json({ error: 'schoolName is required when research is needed' }, 400, origin);
 
-    const prompt = type === 'setter' ? setterPrompt(schoolName) : type === 'aid' ? aidPrompt(schoolName) : athleticPrompt(schoolName);
+    const prompt = type === 'setter' ? setterPrompt(schoolName) : type === 'aid' ? aidPrompt(schoolName) : type === 'athletic' ? athleticPrompt(schoolName) : coachPrompt(schoolName);
     const payload = await callResearchWorker(prompt);
-    const ttlDays = type === 'setter' ? SETTER_TTL_DAYS : type === 'aid' ? AID_TTL_DAYS : ATHLETIC_TTL_DAYS;
+    const ttlDays = type === 'setter' ? SETTER_TTL_DAYS : type === 'aid' ? AID_TTL_DAYS : type === 'athletic' ? ATHLETIC_TTL_DAYS : COACH_TTL_DAYS;
     const checkedAt = new Date().toISOString();
     const expiresAt = new Date(now + ttlDays * 86400000).toISOString();
     const sourceUrl = type === 'setter' ? (payload.pageUrl || null) : (payload.sourceUrl || null);
